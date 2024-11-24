@@ -547,4 +547,21 @@ mod tests {
             };
         };
     }
+
+        #[test]  
+    fn test_serialization() {  
+        let note_on = NoteOn {  
+            channel: 1,  
+            note: 60,  
+            velocity: 127,  
+            time: None,  
+        };  
+        let midi = Midi {  
+            events: vec![Message::NOTE_ON(note_on)],  
+        };  
+        let json_output = output_json_midi_object(midi);  
+        // Convert Array<u8> to String for easier comparison  
+        let json_string = String::from_utf8(json_output.to_vec()).unwrap();  
+        assert!(json_string.contains("\"type\": \"NOTE_ON\""));  
+    } 
 }
