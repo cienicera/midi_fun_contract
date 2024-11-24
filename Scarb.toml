@@ -4,3 +4,6 @@ version = "0.1.0"
 
 [dependencies]
 orion = { git = "https://github.com/gizatechxyz/orion.git", tag = "v0.2.4" }
+
+[dev-dependencies]
+cairo_test = "2.8.5"
