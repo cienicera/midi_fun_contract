@@ -792,7 +792,7 @@ impl MidiImpl of MidiTrait {
         loop {
             match ev.pop_front() {
                 Option::Some(currentevent) => {
-                    let steps = steps_array.get(steps_index).unwrap().deref();
+                    let steps = steps_array[steps_index];
                     steps_index = (steps_index + 1) % steps_array.len();
     
                     match currentevent {
