@@ -31,7 +31,7 @@ trait MidiTrait {
         factor: i32,
         new_tempo: u32,
         chanel: u32,
-        steps: i32,
+        steps_array: Array<i32>,
         tonic: PitchClass,
         modes: Modes
     ) -> Midi;
@@ -58,7 +58,7 @@ trait MidiTrait {
     /// Return statistics about notes (e.g., most frequent note, average note duration).
     /// =========== ADVANCED MANIPULATION ===========
     /// Add harmonies to existing melodies based on specified intervals.
-    fn generate_harmony(self: @Midi, steps: i32, tonic: PitchClass, modes: Modes) -> Midi;
+    fn generate_harmony(self: @Midi, steps_array: Array<i32>, tonic: PitchClass, modes: Modes) -> Midi;
     /// Convert chords into arpeggios based on a given pattern.
     fn arpeggiate_chords(self: @Midi, pattern: ArpPattern) -> Midi;
     /// Add or modify dynamics (velocity) of notes based on a specified curve or pattern.
@@ -77,7 +77,7 @@ impl MidiImpl of MidiTrait {
         factor: i32,
         new_tempo: u32,
         chanel: u32,
-        steps: i32,
+        steps_array: Array<i32>,
         tonic: PitchClass,
         modes: Modes
     ) -> Midi {
@@ -150,7 +150,7 @@ impl MidiImpl of MidiTrait {
             .change_note_duration(factor)
             .change_tempo(new_tempo)
             .remap_instruments(chanel)
-            .generate_harmony(steps, tonic, modes);
+            .generate_harmony(steps_array, tonic, modes);
 
         if reverse == 0 { //could be a bool
         } else {
@@ -783,83 +783,80 @@ impl MidiImpl of MidiTrait {
         outtempo
     }
 
-    fn generate_harmony(self: @Midi, steps: i32, tonic: PitchClass, modes: Modes) -> Midi {
+    fn generate_harmony(self: @Midi, steps_array: Array<i32>, tonic: PitchClass, modes: Modes) -> Midi {
         let mut ev = self.clone().events;
         let mut eventlist = ArrayTrait::<Message>::new();
         let currentmode = mode_steps(modes);
-
+        let mut steps_index = 0;
+    
         loop {
             match ev.pop_front() {
                 Option::Some(currentevent) => {
+                    let steps = steps_array.get(steps_index).unwrap().deref();
+                    steps_index = (steps_index + 1) % steps_array.len();
+    
                     match currentevent {
                         Message::NOTE_ON(NoteOn) => {
                             let outnote = keynum_to_pc(*NoteOn.note)
                                 .modal_transposition(
                                     tonic,
                                     currentmode,
-                                    steps.try_into().unwrap(),
-                                    if steps < 0 {
+                                    (*steps).try_into().unwrap(),
+                                    if *steps < 0 {
                                         Direction::Up(())
                                     } else {
                                         Direction::Down(())
                                     },
                                 );
-
+    
                             let newnote = NoteOn {
                                 channel: *NoteOn.channel,
                                 note: outnote,
                                 velocity: *NoteOn.velocity,
                                 time: *NoteOn.time
                             };
-
+    
                             let notemessage = Message::NOTE_ON((newnote));
                             eventlist.append(notemessage);
-                            //include original note
+                            // Include the original note
                             eventlist.append(*currentevent);
                         },
                         Message::NOTE_OFF(NoteOff) => {
-                            let outnote = if steps < 0 {
-                                *NoteOff.note - steps.try_into().unwrap()
+                            let outnote = if *steps < 0 {
+                                *NoteOff.note - (*steps).try_into().unwrap()
                             } else {
-                                *NoteOff.note + steps.try_into().unwrap()
+                                *NoteOff.note + (*steps).try_into().unwrap()
                             };
-
+    
                             let newnote = NoteOff {
                                 channel: *NoteOff.channel,
                                 note: outnote,
                                 velocity: *NoteOff.velocity,
                                 time: *NoteOff.time
                             };
-
+    
                             let notemessage = Message::NOTE_OFF((newnote));
                             eventlist.append(notemessage);
-                            //include original note
+                            // Include the original note
                             eventlist.append(*currentevent);
                         },
                         Message::SET_TEMPO(_SetTempo) => { eventlist.append(*currentevent); },
-                        Message::TIME_SIGNATURE(_TimeSignature) => {
-                            eventlist.append(*currentevent);
-                        },
-                        Message::CONTROL_CHANGE(_ControlChange) => {
-                            eventlist.append(*currentevent);
-                        },
+                        Message::TIME_SIGNATURE(_TimeSignature) => { eventlist.append(*currentevent); },
+                        Message::CONTROL_CHANGE(_ControlChange) => { eventlist.append(*currentevent); },
                         Message::PITCH_WHEEL(_PitchWheel) => { eventlist.append(*currentevent); },
                         Message::AFTER_TOUCH(_AfterTouch) => { eventlist.append(*currentevent); },
                         Message::POLY_TOUCH(_PolyTouch) => { eventlist.append(*currentevent); },
-                        Message::PROGRAM_CHANGE(_ProgramChange) => {
-                            eventlist.append(*currentevent);
-                        },
-                        Message::SYSTEM_EXCLUSIVE(_SystemExclusive) => {
-                            eventlist.append(*currentevent);
-                        },
+                        Message::PROGRAM_CHANGE(_ProgramChange) => { eventlist.append(*currentevent); },
+                        Message::SYSTEM_EXCLUSIVE(_SystemExclusive) => { eventlist.append(*currentevent); },
                     }
                 },
                 Option::None(_) => { break; }
             };
         };
-
+    
         Midi { events: eventlist.span() }
     }
+    
 
     fn arpeggiate_chords(self: @Midi, pattern: ArpPattern) -> Midi {
         panic(array!['not supported yet'])
