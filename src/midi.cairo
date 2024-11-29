@@ -6,3 +6,4 @@ mod modes;
 mod pitch;
 mod velocitycurve;
 mod euclidean;
+mod output;
