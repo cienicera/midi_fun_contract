@@ -547,4 +547,95 @@ mod tests {
             };
         };
     }
+
+    #[test]
+    #[available_gas(100000000)]
+    fn generate_harmony_combined_test() {
+        let mut eventlist = ArrayTrait::<Message>::new();
+    
+        let note_on1 = NoteOn {
+            channel: 0,
+            note: 60,
+            velocity: 100,
+            time: FP32x32 { mag: 0, sign: false },
+        };
+        let note_off1 = NoteOff {
+            channel: 0,
+            note: 60,
+            velocity: 100,
+            time: FP32x32 { mag: 1000, sign: false },
+        };
+    
+        let note_on2 = NoteOn {
+            channel: 0,
+            note: 64,
+            velocity: 100,
+            time: FP32x32 { mag: 500, sign: false },
+        };
+        let note_off2 = NoteOff {
+            channel: 0,
+            note: 64,
+            velocity: 100,
+            time: FP32x32 { mag: 1500, sign: false },
+        };
+
+        eventlist.append(Message::NOTE_ON(note_on1));
+        eventlist.append(Message::NOTE_OFF(note_off1));
+        eventlist.append(Message::NOTE_ON(note_on2));
+        eventlist.append(Message::NOTE_OFF(note_off2));
+    
+        let midi = Midi {
+            events: eventlist.span(),
+        };
+    
+        let mut steps_array = ArrayTrait::<i32>::new();
+        steps_array.append(4);
+        steps_array.append(7);
+        let tonic = PitchClass {
+            note: 0,
+            octave: 4,
+        };
+        let mode = Modes::Major;
+    
+        let harmonized_midi = midi.generate_harmony(steps_array.clone(), tonic, mode);
+    
+        let mut events = harmonized_midi.events;
+    
+        loop {
+            match events.pop_front() {
+                Option::Some(current_event) => match current_event {
+                    Message::NOTE_ON(NoteOn) => {
+                        assert!(
+                            *NoteOn.note != 60, // Ensure it's different from the original (60)
+                            "Generated NOTE_ON is the same as the original note"
+                        );
+    
+                        // Ensure harmonic note is within range
+                        assert!(
+                            *NoteOn.note >= 48 && *NoteOn.note <= 84,
+                            "Generated NOTE_ON out of range"
+                        );
+    
+                    },
+                    Message::NOTE_OFF(NoteOff) => {
+                        // Ensure there is a change in the note (verify it differs from the original)
+                        assert!(
+                            *NoteOff.note != 60, // Ensure it's different from the original (60)
+                            "Generated NOTE_OFF is the same as the original note"
+                        );
+    
+                        // Ensure harmonic note is within range
+                        assert!(
+                            *NoteOff.note >= 48 && *NoteOff.note <= 84,
+                            "Generated NOTE_OFF out of range"
+                        );
+                    },
+                    _ => {}
+                },
+                Option::None(_) => {break;},
+            }
+        };
+    
+    }
+    
 }
