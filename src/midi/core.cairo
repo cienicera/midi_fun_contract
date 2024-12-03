@@ -16,7 +16,7 @@ use koji::midi::instruments::{
 };
 use koji::midi::time::round_to_nearest_nth;
 use koji::midi::modes::{mode_steps};
-use koji::midi::pitch::{PitchClassTrait, keynum_to_pc};
+use koji::midi::pitch::{PitchClassTrait, keynum_to_pc, pc_to_keynum};
 use koji::midi::velocitycurve::{VelocityCurveTrait};
 
 trait MidiTrait {
@@ -63,6 +63,8 @@ trait MidiTrait {
     fn arpeggiate_chords(self: @Midi, pattern: ArpPattern) -> Midi;
     /// Add or modify dynamics (velocity) of notes based on a specified curve or pattern.
     fn edit_dynamics(self: @Midi, curve: VelocityCurve) -> Midi;
+    /// Add notes one or more octaves higher or lower
+    fn octave_double(self: @Midi, octave_count: i32) -> Midi;
 }
 
 impl MidiImpl of MidiTrait {
@@ -931,6 +933,92 @@ impl MidiImpl of MidiTrait {
                         Message::SYSTEM_EXCLUSIVE(_SystemExclusive) => {
                             eventlist.append(*currentevent);
                         },
+                    }
+                },
+                Option::None(_) => { break; }
+            };
+        };
+
+        Midi { events: eventlist.span() }
+    }
+
+    fn octave_double(self: @Midi, octave_count: i32) -> Midi {
+        let mut ev = self.clone().events;
+        let mut eventlist = ArrayTrait::<Message>::new();
+
+        loop {
+            match ev.pop_front() {
+                Option::Some(currentevent) => {
+                    // Always keep the original event
+                    eventlist.append(*currentevent);
+                    
+                    match currentevent {
+                        Message::NOTE_ON(NoteOn) => {
+                            // Convert note to PitchClass
+                            let original_pc = keynum_to_pc(*NoteOn.note);
+                            // Create new PitchClass with adjusted octave
+                            let new_pc = PitchClass { 
+                                note: original_pc.note, 
+                                octave: if octave_count < 0 {
+                                    original_pc.octave - octave_count.try_into().unwrap()
+                                } else {
+                                    original_pc.octave + octave_count.try_into().unwrap()
+                                }
+                            };
+                            
+                            // Convert back to keynum
+                            let new_note = pc_to_keynum(new_pc);
+                            
+                            // Only add if the new note is within valid MIDI range (0-127)
+                            if new_note <= 127 {
+                                let doubled_note = NoteOn {
+                                    channel: *NoteOn.channel,
+                                    note: new_note,
+                                    velocity: *NoteOn.velocity,
+                                    time: *NoteOn.time
+                                };
+                                let note_message = Message::NOTE_ON((doubled_note));
+                                eventlist.append(note_message);
+                            }
+                        },
+                        Message::NOTE_OFF(NoteOff) => {
+                            // Convert note to PitchClass
+                            let original_pc = keynum_to_pc(*NoteOff.note);
+                            // Create new PitchClass with adjusted octave
+                            let new_pc = PitchClass { 
+                                note: original_pc.note, 
+                                octave: if octave_count < 0 {
+                                    original_pc.octave - octave_count.try_into().unwrap()
+                                } else {
+                                    original_pc.octave + octave_count.try_into().unwrap()
+                                }
+                            };
+                            
+                            // Convert back to keynum
+                            let new_note = pc_to_keynum(new_pc);
+                            
+                            // Only add if the new note is within valid MIDI range (0-127)
+                            if new_note <= 127 {
+                                let doubled_note = NoteOff {
+                                    channel: *NoteOff.channel,
+                                    note: new_note,
+                                    velocity: *NoteOff.velocity,
+                                    time: *NoteOff.time
+                                };
+                                let note_message = Message::NOTE_OFF((doubled_note));
+                                eventlist.append(note_message);
+                            }
+                        },
+                        
+                        // All other message types are passed through unchanged
+                        Message::SET_TEMPO(_) => {},
+                        Message::TIME_SIGNATURE(_) => {},
+                        Message::CONTROL_CHANGE(_) => {},
+                        Message::PITCH_WHEEL(_) => {},
+                        Message::AFTER_TOUCH(_) => {},
+                        Message::POLY_TOUCH(_) => {},
+                        Message::PROGRAM_CHANGE(_) => {},
+                        Message::SYSTEM_EXCLUSIVE(_) => {},
                     }
                 },
                 Option::None(_) => { break; }
