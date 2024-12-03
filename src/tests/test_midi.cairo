@@ -547,4 +547,122 @@ mod tests {
             };
         };
     }
+
+    #[test]
+    #[available_gas(100000000000)]
+    fn detect_chords_test() {
+        let mut eventlist = ArrayTrait::<Message>::new();
+
+        // Create three notes that should form a chord (even closer in time)
+        let chord_note1 = NoteOn {
+            channel: 0,
+            note: 60, // Middle C
+            velocity: 100,
+            time: FP32x32 { mag: 1000, sign: false }
+        };
+
+        let chord_note2 = NoteOn {
+            channel: 0,
+            note: 64, // E
+            velocity: 100,
+            time: FP32x32 { mag: 1005, sign: false } // Reduced time difference
+        };
+
+        let chord_note3 = NoteOn {
+            channel: 0,
+            note: 67, // G
+            velocity: 100,
+            time: FP32x32 { mag: 1010, sign: false } // Reduced time difference
+        };
+
+        // Create corresponding note-off events (closer together)
+        let chord_note1_off = NoteOff {
+            channel: 0,
+            note: 60,
+            velocity: 100,
+            time: FP32x32 { mag: 1200, sign: false }
+        };
+
+        let chord_note2_off = NoteOff {
+            channel: 0,
+            note: 64,
+            velocity: 100,
+            time: FP32x32 { mag: 1205, sign: false }
+        };
+
+        let chord_note3_off = NoteOff {
+            channel: 0,
+            note: 67,
+            velocity: 100,
+            time: FP32x32 { mag: 1210, sign: false }
+        };
+
+        // Convert notes to messages
+        let msg1_on = Message::NOTE_ON((chord_note1));
+        let msg2_on = Message::NOTE_ON((chord_note2));
+        let msg3_on = Message::NOTE_ON((chord_note3));
+
+        let msg1_off = Message::NOTE_OFF((chord_note1_off));
+        let msg2_off = Message::NOTE_OFF((chord_note2_off));
+        let msg3_off = Message::NOTE_OFF((chord_note3_off));
+
+        // Add messages to event list in chronological order
+        eventlist.append(msg1_on);
+        eventlist.append(msg2_on);
+        eventlist.append(msg3_on);
+        eventlist.append(msg1_off);
+        eventlist.append(msg2_off);
+        eventlist.append(msg3_off);
+
+        let midiobj = Midi { events: eventlist.span() };
+
+        // Detect chords with a window size of 20 ticks and minimum 3 notes
+        let chords = midiobj.detect_chords(20, 3);
+
+        // Debug print the events
+        'Number of events:'.print();
+        chords.events.len().print();
+
+        // Verify the results
+        let mut ev = chords.events;
+        let mut chord_count = 0;
+        let mut notes_in_chord = 0;
+
+        loop {
+            match ev.pop_front() {
+                Option::Some(currentevent) => {
+                    match currentevent {
+                        Message::NOTE_ON(NoteOn) => {
+                            // Debug print
+                            'Found note:'.print();
+                            (*NoteOn.note).print();
+                            
+                            // Verify the notes are part of our expected chord (C major: 60, 64, 67)
+                            assert(
+                                *NoteOn.note == 60 || *NoteOn.note == 64 || *NoteOn.note == 67,
+                                'Unexpected note in chord'
+                            );
+                            notes_in_chord += 1;
+                        },
+                        Message::NOTE_OFF(_NoteOff) => {
+                            // Count note-offs to verify we have the right number
+                            chord_count += 1;
+                        },
+                        _ => {},
+                    }
+                },
+                Option::None(_) => { break; }
+            };
+        };
+
+        // Debug print the counts
+        'Notes in chord:'.print();
+        notes_in_chord.print();
+        'Note-offs found:'.print();
+        chord_count.print();
+
+        // Verify we found exactly one chord with three notes
+        assert(notes_in_chord == 3, 'Should find exactly 3 notes');
+        assert(chord_count == 3, 'Should find exactly 3 note-offs');
+    }
 }

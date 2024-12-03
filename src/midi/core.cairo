@@ -63,6 +63,8 @@ trait MidiTrait {
     fn arpeggiate_chords(self: @Midi, pattern: ArpPattern) -> Midi;
     /// Add or modify dynamics (velocity) of notes based on a specified curve or pattern.
     fn edit_dynamics(self: @Midi, curve: VelocityCurve) -> Midi;
+    /// Detect chords within the MIDI data based on timing windows
+    fn detect_chords(self: @Midi, window_size: usize, minimum_notes: usize) -> Midi;
 }
 
 impl MidiImpl of MidiTrait {
@@ -923,6 +925,76 @@ impl MidiImpl of MidiTrait {
                     }
                 },
                 Option::None(_) => { break; }
+            };
+        };
+
+        Midi { events: eventlist.span() }
+    }
+
+    fn detect_chords(self: @Midi, window_size: usize, minimum_notes: usize) -> Midi {
+        let mut ev = self.clone().events;
+        let mut eventlist = ArrayTrait::<Message>::new();
+        let mut current_window = ArrayTrait::<Message>::new();
+        let mut current_time = FP32x32 { mag: 0, sign: false };
+        let window_size_fp = FP32x32 { mag: window_size.try_into().unwrap(), sign: false };
+
+        // First pass: Group notes into windows
+        loop {
+            match ev.pop_front() {
+                Option::Some(currentevent) => {
+                    match currentevent {
+                        Message::NOTE_ON(NoteOn) => {
+                            // Check if this note belongs in the current window
+                            if *NoteOn.time - current_time <= window_size_fp {
+                                current_window.append(*currentevent);
+                            } else {
+                                // Process current window if it has enough notes
+                                if current_window.len() >= minimum_notes {
+                                    // Add all notes in the window as a chord
+                                    let mut window_iter = current_window.span();
+                                    loop {
+                                        match window_iter.pop_front() {
+                                            Option::Some(note) => {
+                                                eventlist.append(*note);
+                                            },
+                                            Option::None => { break; }
+                                        };
+                                    };
+                                }
+                                
+                                // Start new window
+                                current_window = ArrayTrait::new();
+                                current_window.append(*currentevent);
+                                current_time = *NoteOn.time;
+                            }
+                        },
+                        Message::NOTE_OFF(NoteOff) => {
+                            // Add corresponding NOTE_OFF events for detected chords
+                            if current_window.len() >= minimum_notes {
+                                eventlist.append(*currentevent);
+                            }
+                        },
+                        // Preserve other MIDI events
+                        Message::SET_TEMPO(_) => { eventlist.append(*currentevent); },
+                        Message::PROGRAM_CHANGE(_) => { eventlist.append(*currentevent); },
+                        _ => {} // Skip other message types
+                    }
+                },
+                Option::None(_) => {
+                    // Process final window if needed
+                    if current_window.len() >= minimum_notes {
+                        let mut window_iter = current_window.span();
+                        loop {
+                            match window_iter.pop_front() {
+                                Option::Some(note) => {
+                                    eventlist.append(*note);
+                                },
+                                Option::None => { break; }
+                            };
+                        };
+                    }
+                    break;
+                }
             };
         };
 
