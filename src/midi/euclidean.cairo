@@ -1,6 +1,6 @@
 use core::array::SpanTrait;
 use core::traits::Into;
-use core::traits::IndexView;
+use core::ops::index::IndexView;
 use core::array::ArrayTrait;
 use core::fmt::Display;
 use core::fmt::Formatter;
