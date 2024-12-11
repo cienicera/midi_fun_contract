@@ -547,4 +547,103 @@ mod tests {
             };
         };
     }
+
+    #[test]
+    #[available_gas(100000000000)]
+    fn invert_notes_test() {
+        let mut eventlist = ArrayTrait::<Message>::new();
+
+        // Create test notes - using middle C (60) as pivot
+        let newnoteon1 = NoteOn {
+            channel: 0, note: 48, velocity: 100, time: FP32x32 { mag: 0, sign: false }
+        }; // C3 - should become C5 (72)
+
+        let newnoteon2 = NoteOn {
+            channel: 0, note: 67, velocity: 100, time: FP32x32 { mag: 1000, sign: false }
+        }; // G4 - should become Db4 (53)
+
+        let newnoteon3 = NoteOn {
+            channel: 0, note: 60, velocity: 100, time: FP32x32 { mag: 1500, sign: false }
+        }; // C4 (pivot) - should stay C4 (60)
+
+        let newnoteoff1 = NoteOff {
+            channel: 0, note: 48, velocity: 100, time: FP32x32 { mag: 2000, sign: false }
+        };
+
+        let newnoteoff2 = NoteOff {
+            channel: 0, note: 67, velocity: 100, time: FP32x32 { mag: 1500, sign: false }
+        };
+
+        let newnoteoff3 = NoteOff {
+            channel: 0, note: 60, velocity: 100, time: FP32x32 { mag: 5000, sign: false }
+        };
+
+        // Create messages
+        let notemessageon1 = Message::NOTE_ON((newnoteon1));
+        let notemessageon2 = Message::NOTE_ON((newnoteon2));
+        let notemessageon3 = Message::NOTE_ON((newnoteon3));
+
+        let notemessageoff1 = Message::NOTE_OFF((newnoteoff1));
+        let notemessageoff2 = Message::NOTE_OFF((newnoteoff2));
+        let notemessageoff3 = Message::NOTE_OFF((newnoteoff3));
+
+        // Add tempo message
+        let newtempo = SetTempo { tempo: 120, time: Option::Some(FP32x32 { mag: 0, sign: false }) };
+        let tempomessage = Message::SET_TEMPO((newtempo));
+
+        // Build event list
+        eventlist.append(tempomessage);
+        eventlist.append(notemessageon1);
+        eventlist.append(notemessageon2);
+        eventlist.append(notemessageon3);
+        eventlist.append(notemessageoff1);
+        eventlist.append(notemessageoff2);
+        eventlist.append(notemessageoff3);
+
+        let midiobj = Midi { events: eventlist.span() };
+
+        // Invert around middle C (60)
+        let midiobjnotes = midiobj.invert_notes(60);
+
+        // Test the inverted notes
+        let mut ev = midiobjnotes.clone().events;
+        loop {
+            match ev.pop_front() {
+                Option::Some(currentevent) => {
+                    match currentevent {
+                        Message::NOTE_ON(NoteOn) => {
+                            if *NoteOn.time.mag == 0 {
+                                // First note (C3 -> C5)
+                                assert(*NoteOn.note == 72, 'C3 should invert to C5');
+                            } else if *NoteOn.time.mag == 1000 {
+                                // Second note (G4 -> Db4)
+                                assert(*NoteOn.note == 53, 'G4 should invert to Db4');
+                            } else if *NoteOn.time.mag == 1500 {
+                                // Third note (pivot note)
+                                assert(*NoteOn.note == 60, 'Pivot note should not change');
+                            }
+                        },
+                        Message::NOTE_OFF(NoteOff) => {
+                            if *NoteOff.time.mag == 2000 {
+                                assert(*NoteOff.note == 72, 'C3 OFF should invert to C5');
+                            } else if *NoteOff.time.mag == 1500 {
+                                assert(*NoteOff.note == 53, 'G4 OFF should invert to Db4');
+                            } else if *NoteOff.time.mag == 5000 {
+                                assert(*NoteOff.note == 60, 'Pivot OFF should not change');
+                            }
+                        },
+                        Message::SET_TEMPO(_) => {},
+                        Message::TIME_SIGNATURE(_) => {},
+                        Message::CONTROL_CHANGE(_) => {},
+                        Message::PITCH_WHEEL(_) => {},
+                        Message::AFTER_TOUCH(_) => {},
+                        Message::POLY_TOUCH(_) => {},
+                        Message::PROGRAM_CHANGE(_) => {},
+                        Message::SYSTEM_EXCLUSIVE(_) => {},
+                    }
+                },
+                Option::None(_) => { break; }
+            };
+        };
+    }
 }
