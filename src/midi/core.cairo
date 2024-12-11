@@ -63,6 +63,8 @@ trait MidiTrait {
     fn arpeggiate_chords(self: @Midi, pattern: ArpPattern) -> Midi;
     /// Add or modify dynamics (velocity) of notes based on a specified curve or pattern.
     fn edit_dynamics(self: @Midi, curve: VelocityCurve) -> Midi;
+    /// Invert notes around a pivot note
+    fn invert_notes(self: @Midi, pivot_note: u8) -> Midi;
 }
 
 impl MidiImpl of MidiTrait {
@@ -931,6 +933,82 @@ impl MidiImpl of MidiTrait {
                         Message::SYSTEM_EXCLUSIVE(_SystemExclusive) => {
                             eventlist.append(*currentevent);
                         },
+                    }
+                },
+                Option::None(_) => { break; }
+            };
+        };
+
+        Midi { events: eventlist.span() }
+    }
+
+     fn invert_notes(self: @Midi, pivot_note: u8) -> Midi {
+        let mut ev = self.clone().events;
+        let mut eventlist = ArrayTrait::<Message>::new();
+
+        loop {
+            match ev.pop_front() {
+                Option::Some(currentevent) => {
+                    match currentevent {
+                        Message::NOTE_ON(NoteOn) => {
+                            // Calculate inverted pitch
+                            let original_note = *NoteOn.note;
+                            let inverted_note = if original_note <= pivot_note {
+                                pivot_note + (pivot_note - original_note)
+                            } else {
+                                // When original note is above pivot, we subtract in reverse
+                                pivot_note - (original_note - pivot_note)
+                            };
+
+                            // Ensure note stays within MIDI range (0-127)
+                            let final_note = if inverted_note > 127 {
+                                127
+                            } else {
+                                inverted_note
+                            };
+
+                            let newnote = NoteOn {
+                                channel: *NoteOn.channel,
+                                note: final_note,
+                                velocity: *NoteOn.velocity,
+                                time: *NoteOn.time
+                            };
+                            let notemessage = Message::NOTE_ON((newnote));
+                            eventlist.append(notemessage);
+                        },
+                        Message::NOTE_OFF(NoteOff) => {
+                            let original_note = *NoteOff.note;
+                            let inverted_note = if original_note <= pivot_note {
+                                pivot_note + (pivot_note - original_note)
+                            } else {
+                                pivot_note - (original_note - pivot_note)
+                            };
+
+                            // Ensure note stays within MIDI range (0-127)
+                            let final_note = if inverted_note > 127 {
+                                127
+                            } else {
+                                inverted_note
+                            };
+
+                            let newnote = NoteOff {
+                                channel: *NoteOff.channel,
+                                note: final_note,
+                                velocity: *NoteOff.velocity,
+                                time: *NoteOff.time
+                            };
+                            let notemessage = Message::NOTE_OFF((newnote));
+                            eventlist.append(notemessage);
+                        },
+                        // Pass through all other message types unchanged
+                        Message::SET_TEMPO(_) => { eventlist.append(*currentevent); },
+                        Message::TIME_SIGNATURE(_) => { eventlist.append(*currentevent); },
+                        Message::CONTROL_CHANGE(_) => { eventlist.append(*currentevent); },
+                        Message::PITCH_WHEEL(_) => { eventlist.append(*currentevent); },
+                        Message::AFTER_TOUCH(_) => { eventlist.append(*currentevent); },
+                        Message::POLY_TOUCH(_) => { eventlist.append(*currentevent); },
+                        Message::PROGRAM_CHANGE(_) => { eventlist.append(*currentevent); },
+                        Message::SYSTEM_EXCLUSIVE(_) => { eventlist.append(*currentevent); },
                     }
                 },
                 Option::None(_) => { break; }
